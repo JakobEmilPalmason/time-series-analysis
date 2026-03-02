@@ -1,0 +1,13 @@
+[project]
+name = "time-series-analysis"
+version = "0.1.0"
+description = "DTU course on time series analysis"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "pandas",
+    "matplotlib",
+    "statsmodels",
+    "scipy",
+    "jupyter",
+]
