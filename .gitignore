@@ -21,6 +21,7 @@ env/
 *.csv
 *.xlsx
 !04-data/*.csv
+!03-assignments/**/*.csv
 
 # Environment
 .env
