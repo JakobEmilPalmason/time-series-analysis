@@ -103,3 +103,110 @@ Plot `plot_3_6.png` — four diagnostic plots:
 - **ACF plot:** Very high autocorrelation at all lags (ACF > 0.9 at lag 1), decaying slowly. This strongly violates the i.i.d. assumption — residuals are highly correlated over time.
 
 **Conclusion:** The model assumptions are **not fulfilled**. The residuals show systematic structure (non-zero mean pattern), non-normality, and strong autocorrelation. A simple global linear trend is insufficient for this data.
+
+## 5. Recursive Estimation and Optimization of λ
+
+### 5.1 & 5.2 — RLS update equations and first iterations
+
+Update equations:
+- R_t = λ·R_{t-1} + x_t · x_t'
+- θ̂_t = θ̂_{t-1} + R_t⁻¹ · x_t · (y_t - x_t' · θ̂_{t-1})
+
+Initialized with R₀ = 0.1·I, θ₀ = [0, 0]', λ = 1 (no forgetting).
+
+**R matrices (first 2 iterations):**
+```
+R₁ = [[1.1000,    2018.0000],
+      [2018.0000, 4072324.1000]]
+
+R₂ = [[2.1000,    4036.0833],
+      [4036.0833, 8144984.4403]]
+```
+
+**Parameter estimates for t = 1, 2, 3:**
+
+| t | θ̂₁ | θ̂₂ |
+|---|-----|-----|
+| 1 | 0.000001 | 0.001452 |
+| 2 | 0.000000 | 0.001453 |
+| 3 | -0.000004 | 0.001455 |
+
+The estimates are very small initially because R₀ = 0.1·I gives a strong prior pulling toward θ₀ = 0. Each group member should do the first 2 R iterations by hand.
+
+### 5.3 — RLS at t=N vs OLS
+
+| Method | θ̂₁ | θ̂₂ |
+|--------|-----|-----|
+| RLS (R₀ = 0.1·I) | -0.058 | 0.00157 |
+| RLS (R₀ = 1e-6·I) | -108.307 | 0.05513 |
+| RLS (R₀ = 1e-9·I) | -110.353 | 0.05614 |
+| OLS | -110.355 | 0.05614 |
+
+- With R₀ = 0.1·I, RLS is far from OLS — the prior dominates even after 72 observations
+- Shrinking R₀ progressively: Δθ̂₁ goes from 110 → 2.0 → 0.002
+- R₀ = 1e-9·I effectively matches OLS to 3 decimal places
+- R₀ acts as prior information; smaller R₀ = "we know less initially" → data dominates faster
+- The ill-conditioned design matrix (x ≈ 2018) amplifies even tiny R₀ in the intercept
+
+### 5.4 — RLS with forgetting (λ = 0.7 and λ = 0.99)
+
+Plots `plot_5_4a.png` (intercept) and `plot_5_4b.png` (slope):
+
+- **λ = 0.7** (blue): Very reactive — the slope spikes to ~0.09 during the 2021 growth surge, then drops to near-zero or negative as growth plateaus in 2022–2023. The intercept swings wildly (-180 to +30). This captures local dynamics but is noisy.
+- **λ = 0.99** (red): Nearly flat, close to zero — behaves almost like OLS with slight adaptation. Very stable but slow to respond to regime changes.
+- The OLS estimate (gray dashed) is a fixed horizontal line for comparison.
+
+**RLS at t=N vs WLS comparison:**
+- λ = 0.7: RLS ≈ WLS (Δθ̂₁ = 2.5e-4) — excellent match
+- λ = 0.99: RLS ≠ WLS (large gap) — this is because R₀ = 0.1·I still has influence when λ is close to 1 (the forgetting is slow, so the prior doesn't wash out)
+
+### 5.5 — One-step prediction residuals
+
+Plot `plot_5_5.png`:
+- **λ = 0.7:** Small residuals (±0.02M), roughly centered around zero. Adapts quickly. 1-step RMSE = **0.0149**
+- **λ = 0.99:** Large, systematically positive residuals (0.02–0.15M), especially after 2021. The model is always "behind" because it adapts too slowly. 1-step RMSE = **0.0944**
+
+### 5.6 — Optimal λ per prediction horizon
+
+Plot `plot_5_6.png` — RMSE vs λ for k = 1, ..., 12:
+
+| Horizon k | Optimal λ* | RMSE |
+|-----------|-----------|------|
+| 1 | 0.30 | 0.0067 |
+| 2 | 0.30 | 0.0112 |
+| 3 | 0.30 | 0.0164 |
+| 4 | 0.46 | 0.0211 |
+| 5 | 0.47 | 0.0255 |
+| 6 | 0.48 | 0.0299 |
+| 7 | 0.47 | 0.0343 |
+| 8 | 0.47 | 0.0390 |
+| 9 | 0.46 | 0.0439 |
+| 10 | 0.45 | 0.0487 |
+| 11 | 0.44 | 0.0532 |
+| 12 | 0.42 | 0.0585 |
+
+- Short horizons favor smaller λ (more forgetting, faster adaptation)
+- Longer horizons favor slightly larger λ (~0.42–0.48) for stability
+- All optimal λ values are well below 1, confirming the data has time-varying dynamics
+- Yes, it makes sense to let λ depend on the horizon
+
+### 5.7 — Test set predictions comparison
+
+| Method | Test RMSE |
+|--------|-----------|
+| OLS | 0.0617 |
+| WLS (λ = 0.9) | 0.0082 |
+| RLS (λ* = 0.30, single) | 0.0079 |
+| RLS (per-horizon λ*) | 0.0169 |
+
+- OLS is the worst — overshoots significantly due to global averaging
+- WLS and single-λ RLS perform similarly well (~0.008)
+- Per-horizon RLS is slightly worse here because the very small λ values (0.30) lead to more volatile final estimates that don't extrapolate as stably over 12 months
+- Plot `plot_5_7.png` shows OLS (blue) far above actual, while WLS/RLS track closely
+
+### 5.8 — Reflections on time-adaptive models
+
+- **Overfitting vs underfitting:** Small λ → short memory → tracks noise (overfitting). Large λ / OLS → long memory → misses regime changes (underfitting). The optimal λ balances these.
+- **Test set challenges with time-dependent data:** Cannot shuffle or randomly split — must respect temporal ordering. Future data cannot be used to estimate past parameters. This makes traditional cross-validation invalid.
+- **RLS and test sets:** One-step prediction residuals provide a natural form of sequential cross-validation — at each time step, we predict before observing, creating "out-of-sample" errors without a separate test set.
+- **Alternative methods:** Kalman filter (state-space framework), exponential smoothing, ARIMA, sliding window regression, change-point detection models.
