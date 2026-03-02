@@ -20,7 +20,7 @@ env/
 # Data
 *.csv
 *.xlsx
-!data/*.csv
+!04-data/*.csv
 
 # Environment
 .env
